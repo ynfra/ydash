@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ydash</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@wterm/dom@0.5.8/src/terminal.css">
+<style>
+  :root {
+    --bg: #0f1115; --panel: #161a21; --line: #262c36; --fg: #e6e8eb; --muted: #8b93a1;
+    --accent: #7aa2f7; --ok: #4fbf7f; --bad: #e5646a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg); overflow: hidden;
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: grid; grid-template-columns: minmax(320px, 1fr) 6px minmax(420px, 1.1fr);
+  }
+  #left { position: relative; min-width: 0; }
+  #page { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
+  #split { background: var(--line); cursor: col-resize; }
+  #split:hover, #split.drag { background: var(--accent); }
+  body.dragging iframe { pointer-events: none; }
+  #right { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #000; }
+  .bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 10px; color: var(--muted); background: var(--panel); border-bottom: 1px solid var(--line); }
+  #term { flex: 1; min-height: 0; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--bad); }
+
+  /* prompt box */
+  #composer { border-top: 1px solid var(--line); background: var(--panel); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  #prompt {
+    width: 100%; min-height: 64px; max-height: 40vh; resize: vertical; background: var(--bg); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  #prompt:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+  button {
+    background: var(--accent); color: #0b0d12; border: 0; border-radius: 6px; padding: 5px 12px;
+    font: 600 12px -apple-system, sans-serif; cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+
+  /* select-to-comment */
+  #commentBtn { position: absolute; z-index: 10; display: none; box-shadow: 0 4px 14px #0008; }
+  #pop {
+    position: absolute; z-index: 11; display: none; width: 340px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px; box-shadow: 0 8px 30px #000a;
+  }
+  #pop blockquote { margin: 0 0 8px; padding: 4px 8px; border-left: 3px solid var(--accent); color: var(--muted); max-height: 90px; overflow: auto; white-space: pre-wrap; }
+  #pop textarea { width: 100%; min-height: 60px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; resize: vertical; }
+  #pop textarea:focus { outline: none; border-color: var(--accent); }
+  #pop .row { margin-top: 8px; }
+</style>
+</head>
+<body>
+<section id="left">
+  <iframe id="page" src="/dash.html" title="Claude's page"></iframe>
+  <button id="commentBtn">💬 Comment</button>
+  <div id="pop">
+    <blockquote id="popQuote"></blockquote>
+    <textarea id="popText" placeholder="Your comment… (⌘↵ to add)"></textarea>
+    <div class="row"><span>Added to the prompt box, not sent yet</span>
+      <span><button class="ghost" id="popCancel">Cancel</button> <button id="popAdd">Add</button></span></div>
+  </div>
+</section>
+<div id="split" title="Drag to resize"></div>
+<section id="right">
+  <div class="bar"><span><span class="dot" id="dot"></span><span id="conn">connecting…</span></span><span id="title">claude</span></div>
+  <div id="term" class="theme-monokai"></div>
+  <div id="composer">
+    <textarea id="prompt" placeholder="Prompt for Claude… ⌘↵ sends · Enter = new line · selected-text comments land here"></textarea>
+    <div class="row"><span id="hint">⌘↵ send · Esc back to terminal</span>
+      <span><button class="ghost" id="clear">Clear</button> <button id="send">Send ⌘↵</button></span></div>
+  </div>
+</section>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- left: Claude's page, live-reloaded ----------
+  const frame = $("page");
+  let scroll = 0;
+  function reloadPage() {
+    try { scroll = frame.contentWindow.scrollY; } catch {}
+    frame.src = "/dash.html?t=" + Date.now();
+  }
+  frame.addEventListener("load", () => {
+    try { frame.contentWindow.scrollTo(0, scroll); } catch {}
+    hookSelection();
+  });
+  new EventSource("/events").onmessage = reloadPage;
+
+  // ---------- select text on the page → comment ----------
+  const btn = $("commentBtn"), pop = $("pop");
+  let quote = "";
+  function hookSelection() {
+    const doc = frame.contentDocument;
+    if (!doc) return;
+    doc.addEventListener("mouseup", () => setTimeout(() => {
+      const sel = doc.getSelection();
+      const text = sel?.toString().trim();
+      if (!text || pop.style.display === "block") { btn.style.display = "none"; return; }
+      const r = sel.getRangeAt(0).getBoundingClientRect();
+      const left = $("left").getBoundingClientRect();
+      quote = text;
+      btn.style.left = Math.min(r.left, left.width - 120) + "px";
+      btn.style.top = Math.max(4, r.top - 36) + "px";
+      btn.style.display = "block";
+    }, 0));
+    doc.addEventListener("mousedown", () => { btn.style.display = "none"; });
+    doc.addEventListener("scroll", () => { btn.style.display = "none"; });
+  }
+  btn.addEventListener("mousedown", (e) => e.preventDefault()); // keep the selection
+  btn.addEventListener("click", () => {
+    btn.style.display = "none";
+    $("popQuote").textContent = quote;
+    $("popText").value = "";
+    pop.style.left = Math.max(8, Math.min(parseFloat(btn.style.left), $("left").clientWidth - 350)) + "px";
+    pop.style.top = Math.min(parseFloat(btn.style.top) + 36, $("left").clientHeight - 220) + "px";
+    pop.style.display = "block";
+    $("popText").focus();
+  });
+  const closePop = () => { pop.style.display = "none"; };
+  $("popCancel").onclick = closePop;
+  function addComment() {
+    const q = quote.split("\n").map((l) => "> " + l).join("\n");
+    const c = $("popText").value.trim();
+    const p = $("prompt");
+    p.value = (p.value.trim() ? p.value.trimEnd() + "\n\n" : "") + q + "\n" + c;
+    closePop();
+    try { frame.contentDocument.getSelection().removeAllRanges(); } catch {}
+    updateHint();
+  }
+  $("popAdd").onclick = addComment;
+  $("popText").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addComment(); }
+    if (e.key === "Escape") closePop();
+  });
+
+  // ---------- splitter ----------
+  $("split").addEventListener("pointerdown", (e) => {
+    const s = e.currentTarget;
+    s.setPointerCapture(e.pointerId);
+    s.classList.add("drag"); document.body.classList.add("dragging");
+    const move = (ev) => {
+      const pct = Math.min(80, Math.max(20, (ev.clientX / innerWidth) * 100));
+      document.body.style.gridTemplateColumns = `${pct}% 6px 1fr`;
+    };
+    s.addEventListener("pointermove", move);
+    s.addEventListener("pointerup", () => {
+      s.removeEventListener("pointermove", move);
+      s.classList.remove("drag"); document.body.classList.remove("dragging");
+    }, { once: true });
+  });
+
+  // ---------- right: terminal ----------
+  const { WTerm } = await import("https://esm.sh/@wterm/dom@0.5.8");
+  let ws;
+  const send = (m) => ws?.readyState === 1 && ws.send(JSON.stringify(m));
+  const term = new WTerm($("term"), {
+    onData: (d) => send({ t: "i", d }),
+    onResize: (c, r) => send({ t: "r", c, r }),
+    onTitle: (t) => ($("title").textContent = t || "claude"),
+  });
+  await term.init();
+  window.term = term;
+
+  function connect() {
+    ws = new WebSocket(`ws://${location.host}/pty`);
+    ws.binaryType = "arraybuffer";
+    ws.onopen = () => {
+      $("dot").className = "dot on"; $("conn").textContent = "connected";
+      send({ t: "r", c: term.cols, r: term.rows });
+    };
+    ws.onmessage = (e) => term.write(typeof e.data === "string" ? e.data : new Uint8Array(e.data));
+    ws.onclose = () => {
+      $("dot").className = "dot off"; $("conn").textContent = "disconnected — retrying";
+      setTimeout(connect, 1500);
+    };
+  }
+  connect();
+
+  // ---------- prompt box ----------
+  const prompt = $("prompt");
+  function updateHint() {
+    const n = (prompt.value.match(/^> /gm) || []).length ? prompt.value.split(/\n(?=> )/).filter((b) => b.startsWith("> ")).length : 0;
+    $("hint").textContent = n ? `${n} comment${n > 1 ? "s" : ""} queued · ⌘↵ send` : "⌘↵ send · Esc back to terminal";
+  }
+  function sendPrompt() {
+    const text = prompt.value.replace(/\s+$/, "");
+    if (!text || ws?.readyState !== 1) return;
+    // Bracketed paste: multi-line text arrives as one message, then Enter submits it.
+    send({ t: "i", d: "\x1b[200~" + text + "\x1b[201~" });
+    setTimeout(() => send({ t: "i", d: "\r" }), 150);
+    prompt.value = "";
+    updateHint();
+    term.focus?.();
+  }
+  prompt.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendPrompt(); }
+    if (e.key === "Escape") { e.preventDefault(); term.focus?.(); }
+  });
+  prompt.addEventListener("input", updateHint);
+  $("send").onclick = sendPrompt;
+  $("clear").onclick = () => { prompt.value = ""; updateHint(); prompt.focus(); };
+</script>
+</body>
+</html>

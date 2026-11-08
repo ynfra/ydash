@@ -1,0 +1,64 @@
+/* Shared styles for Claude-authored pages in Dash. Dark theme. */
+:root {
+  --bg: #0f1115; --panel: #161a21; --line: #262c36; --fg: #e6e8eb; --muted: #8b93a1;
+  --accent: #7aa2f7; --ok: #4fbf7f; --bad: #e5646a; --warn: #e0b34f; --info: #7aa2f7;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0; padding: 20px 22px 60px; color: var(--fg); background: var(--bg);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+h1 { font-size: 18px; margin: 0 0 14px; }
+h2 { font-size: 15px; margin: 24px 0 10px; }
+h3 { font-size: 14px; margin: 18px 0 8px; }
+h1 small, h2 small, h3 small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 8px; }
+p { margin: 8px 0; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.muted { color: var(--muted); }
+
+.say {
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: 8px; padding: 12px 14px; margin: 0 0 18px; white-space: pre-wrap;
+}
+.say::before {
+  content: "Claude says"; display: block; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--accent); margin-bottom: 4px;
+}
+
+table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); font-weight: 600; }
+td:first-child { font-family: var(--mono); font-size: 13px; }
+tr:hover td { background: #13171d; }
+
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid currentColor; white-space: nowrap; color: var(--muted); }
+.chip.ok { color: var(--ok); } .chip.bad { color: var(--bad); } .chip.warn { color: var(--warn); }
+.chip.info { color: var(--info); } .chip.muted { color: var(--muted); }
+
+.stats { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; min-width: 80px; }
+.stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 11px; color: var(--muted); }
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 0 0 12px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.grid > .card { margin: 0; }
+
+code { font-family: var(--mono); font-size: 12.5px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+pre { font-family: var(--mono); font-size: 12.5px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow: auto; }
+pre code { background: none; border: 0; padding: 0; }
+
+ul.check { list-style: none; padding-left: 0; }
+ul.check li { padding: 3px 0 3px 24px; position: relative; }
+ul.check li::before { content: ""; position: absolute; left: 2px; top: 7px; width: 12px; height: 12px; border: 1.5px solid var(--muted); border-radius: 3px; }
+ul.check li.done { color: var(--muted); }
+ul.check li.done::before { background: var(--ok); border-color: var(--ok); }
+
+details { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 0 0 10px; }
+summary { cursor: pointer; font-weight: 600; }
+
+::selection { background: #3b4f7a; }

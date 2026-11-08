@@ -1,0 +1,7 @@
+node_modules/
+
+# the compiled binary
+/ydash
+
+# bun build --compile scratch files
+*.bun-build
