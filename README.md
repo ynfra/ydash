@@ -17,7 +17,8 @@ make ship              # build ./ydash and symlink it into ~/.local/bin
 cd ~/some/project
 ydash                  # opens http://127.0.0.1:<port> for this folder
 ydash release          # a second, named workspace for the same folder
-ydash -- --continue    # pass flags through to claude
+ydash -- --continue    # flags after -- go to claude: resume the last session
+ydash -- --resume <id> # resume a specific session
 ```
 
 ## Files

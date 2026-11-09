@@ -44,32 +44,52 @@
   button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
   button:disabled { opacity: .5; cursor: default; }
 
+  /* stop button + stopped overlay */
+  .bar .right { display: flex; align-items: center; gap: 10px; }
+  button.stop { background: transparent; color: var(--muted); border: 1px solid var(--line); display: inline-flex; align-items: center; gap: 6px; transition: .15s; }
+  button.stop svg { width: 10px; height: 10px; fill: currentColor; }
+  button.stop:hover { color: var(--bad); border-color: var(--bad); background: #e5646a14; }
+  button.stop.armed { background: var(--bad); border-color: var(--bad); color: #fff; }
+  #stopped { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; background: #0f1115e6; backdrop-filter: blur(6px); }
+  #stopped.on { display: grid; }
+  #stopped div { text-align: center; }
+  #stopped b { display: block; font-size: 20px; margin-bottom: 6px; }
+  #stopped span { color: var(--muted); }
+
   /* select-to-comment */
-  #commentBtn { position: absolute; z-index: 10; display: none; box-shadow: 0 4px 14px #0008; }
-  #pop {
-    position: absolute; z-index: 11; display: none; width: 340px; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 8px; padding: 10px; box-shadow: 0 8px 30px #000a;
+  #commentBtn {
+    position: absolute; z-index: 10; display: none; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 12px 6px 10px;
+    box-shadow: 0 6px 20px #0009, 0 0 0 1px #ffffff14; animation: pop .12s ease-out;
   }
-  #pop blockquote { margin: 0 0 8px; padding: 4px 8px; border-left: 3px solid var(--accent); color: var(--muted); max-height: 90px; overflow: auto; white-space: pre-wrap; }
-  #pop textarea { width: 100%; min-height: 60px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; resize: vertical; }
-  #pop textarea:focus { outline: none; border-color: var(--accent); }
-  #pop .row { margin-top: 8px; }
+  #commentBtn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  @keyframes pop { from { opacity: 0; transform: translateY(4px) scale(.96); } }
+  #pop {
+    position: absolute; z-index: 11; display: none; width: 360px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px; box-shadow: 0 16px 48px #000b, 0 0 0 1px #ffffff0a; animation: pop .14s ease-out;
+  }
+  #pop blockquote { margin: 0 0 10px; padding: 6px 10px; background: #7aa2f714; border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; color: #b4bccb; max-height: 90px; overflow: auto; white-space: pre-wrap; font-size: 12px; }
+  #pop textarea { width: 100%; min-height: 64px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; resize: vertical; }
+  #pop textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px #7aa2f722; }
+  #pop .row { margin-top: 10px; }
+  kbd { font: 11px ui-monospace, Menlo, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 </style>
 </head>
 <body>
+<div id="stopped"><div><b>ydash stopped</b><span>The server and claude have exited. Run <code>ydash</code> again to restart.</span></div></div>
 <section id="left">
   <iframe id="page" src="/dash.html" title="Claude's page"></iframe>
-  <button id="commentBtn">💬 Comment</button>
+  <button id="commentBtn"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Comment</button>
   <div id="pop">
     <blockquote id="popQuote"></blockquote>
-    <textarea id="popText" placeholder="Your comment… (⌘↵ to add)"></textarea>
-    <div class="row"><span>Added to the prompt box, not sent yet</span>
-      <span><button class="ghost" id="popCancel">Cancel</button> <button id="popAdd">Add</button></span></div>
+    <textarea id="popText" placeholder="Your comment for Claude…"></textarea>
+    <div class="row"><span><kbd>⌘↵</kbd> send · <kbd>Esc</kbd> cancel</span>
+      <span><button class="ghost" id="popCancel">Cancel</button> <button class="ghost" id="popAdd" title="Queue in the prompt box without sending">Add to prompt</button> <button id="popSend">Send to Claude</button></span></div>
   </div>
 </section>
 <div id="split" title="Drag to resize"></div>
 <section id="right">
-  <div class="bar"><span><span class="dot" id="dot"></span><span id="conn">connecting…</span></span><span id="title">claude</span></div>
+  <div class="bar"><span><span class="dot" id="dot"></span><span id="conn">connecting…</span></span><span class="right"><span id="title">claude</span>
+    <button class="stop" id="stop" title="Stop ydash and the claude inside it"><svg viewBox="0 0 10 10"><rect width="10" height="10" rx="2"/></svg><span id="stopLbl">Stop</span></button></span></div>
   <div id="term" class="theme-monokai"></div>
   <div id="composer">
     <textarea id="prompt" placeholder="Prompt for Claude… ⌘↵ sends · Enter = new line · selected-text comments land here"></textarea>
@@ -126,18 +146,29 @@
   });
   const closePop = () => { pop.style.display = "none"; };
   $("popCancel").onclick = closePop;
-  function addComment() {
-    const q = quote.split("\n").map((l) => "> " + l).join("\n");
-    const c = $("popText").value.trim();
-    const p = $("prompt");
-    p.value = (p.value.trim() ? p.value.trimEnd() + "\n\n" : "") + q + "\n" + c;
+  const formatComment = () => quote.split("\n").map((l) => "> " + l).join("\n") + "\n" + $("popText").value.trim();
+  const finishComment = () => {
     closePop();
     try { frame.contentDocument.getSelection().removeAllRanges(); } catch {}
+  };
+  function addComment() {
+    const p = $("prompt");
+    p.value = (p.value.trim() ? p.value.trimEnd() + "\n\n" : "") + formatComment();
+    finishComment();
+    updateHint();
+  }
+  function sendComment() {
+    // Anything already queued in the prompt box goes along, so nothing is left behind.
+    const queued = prompt.value.trim();
+    sendText((queued ? queued + "\n\n" : "") + formatComment());
+    prompt.value = "";
+    finishComment();
     updateHint();
   }
   $("popAdd").onclick = addComment;
+  $("popSend").onclick = sendComment;
   $("popText").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addComment(); }
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendComment(); }
     if (e.key === "Escape") closePop();
   });
 
@@ -190,12 +221,16 @@
     const n = (prompt.value.match(/^> /gm) || []).length ? prompt.value.split(/\n(?=> )/).filter((b) => b.startsWith("> ")).length : 0;
     $("hint").textContent = n ? `${n} comment${n > 1 ? "s" : ""} queued · ⌘↵ send` : "⌘↵ send · Esc back to terminal";
   }
-  function sendPrompt() {
-    const text = prompt.value.replace(/\s+$/, "");
+  function sendText(raw) {
+    const text = raw.replace(/\s+$/, "");
     if (!text || ws?.readyState !== 1) return;
     // Bracketed paste: multi-line text arrives as one message, then Enter submits it.
     send({ t: "i", d: "\x1b[200~" + text + "\x1b[201~" });
     setTimeout(() => send({ t: "i", d: "\r" }), 150);
+  }
+  function sendPrompt() {
+    if (!prompt.value.trim()) return;
+    sendText(prompt.value);
     prompt.value = "";
     updateHint();
     term.focus?.();
@@ -206,6 +241,20 @@
   });
   prompt.addEventListener("input", updateHint);
   $("send").onclick = sendPrompt;
+  // ---------- stop ----------
+  let armed;
+  $("stop").onclick = async () => {
+    const b = $("stop");
+    if (!b.classList.contains("armed")) { // first click arms, second confirms
+      b.classList.add("armed"); $("stopLbl").textContent = "Click to confirm";
+      armed = setTimeout(() => { b.classList.remove("armed"); $("stopLbl").textContent = "Stop"; }, 3000);
+      return;
+    }
+    clearTimeout(armed);
+    ws.onclose = null;
+    await fetch("/_stop", { method: "POST" }).catch(() => {});
+    $("stopped").classList.add("on");
+  };
   $("clear").onclick = () => { prompt.value = ""; updateHint(); prompt.focus(); };
 </script>
 </body>

@@ -18,18 +18,27 @@ const HELP = `ydash — Claude in a browser terminal, next to a page it writes f
 Usage:
   ydash [name] [options] [-- <claude args>]
 
-  name              optional; separate workspaces for the same folder
+Arguments:
+  name              optional; a separate workspace (own page, port and claude) for the same folder
+  -- <claude args>  everything after -- is passed to claude unchanged
+
+Options:
   -p, --port <n>    port (default: derived from folder + name, else any free one)
       --no-open     don't open the browser
   -h, --help        this help
 
 Examples:
-  ydash                      # workspace for $PWD
-  ydash release              # a second, named workspace for $PWD
-  ydash -- --continue        # resume the last claude conversation in $PWD
+  ydash                          # workspace for $PWD
+  ydash release                  # a second, named workspace for $PWD
+  ydash -- --continue            # resume the last claude conversation in $PWD
+  ydash -- --resume <session-id> # resume a specific conversation
+  ydash -- --model opus          # any claude flag works the same way
 
-The page lives in $YDASH_DIR (default /tmp/ydash)/<folder>-<hash>[-name]/dash.html
-and survives restarts. YDASH_CMD replaces "claude" (for testing).`;
+Behaviour:
+  Runs in the foreground until stopped: Ctrl+C or the Stop button in the browser.
+  Running it again in the same folder opens the running instance and waits for it to stop.
+  The page lives in $YDASH_DIR (default /tmp/ydash)/<folder>-<hash>[-name]/dash.html
+  and survives restarts. YDASH_CMD replaces "claude" (for testing).`;
 
 // ---------- args ----------
 const argv = Bun.argv.slice(2);
@@ -115,6 +124,10 @@ watch(DIR, () => {
   timer = setTimeout(() => { for (const c of events) c.enqueue("data: reload\n\n"); }, 150);
 });
 
+function stop() { proc?.kill(); process.exit(0); }
+process.on("SIGINT", stop);
+process.on("SIGTERM", stop);
+
 // ---------- server ----------
 const html = (body: string) => new Response(body, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 
@@ -129,6 +142,12 @@ function serve(p: number) {
         case "/": return html(shellHtml);
         case "/dash.css": return new Response(dashCss, { headers: { "Content-Type": "text/css; charset=utf-8" } });
         case "/_ydash": return Response.json({ key, cwd: CWD, page: PAGE });
+        case "/_stop": {
+          // Same-origin POST only: a random website must not be able to kill the session.
+          if (req.method !== "POST" || req.headers.get("origin") !== url.origin) return new Response("forbidden", { status: 403 });
+          setTimeout(stop, 200); // let the response flush first
+          return Response.json({ ok: true });
+        }
         case "/pty": return srv.upgrade(req) ? undefined : new Response("upgrade failed", { status: 400 });
         case "/events": {
           let ctrl: ReadableStreamDefaultController;
@@ -182,8 +201,11 @@ try {
   const running = await fetch(`http://127.0.0.1:${preferred}/_ydash`).then((r) => r.json()).catch(() => null) as { key?: string } | null;
   if (running?.key === key) {
     const url = `http://127.0.0.1:${preferred}`;
-    console.log(`ydash: already running for this workspace → ${url}`);
+    console.log(`ydash: already running for this workspace → ${url}\n  waiting until it stops (Ctrl+C to detach)`);
     openBrowser(url);
+    // Stay blocked like the first instance would, so a caller waiting on ydash behaves the same either way.
+    while (await fetch(`${url}/_ydash`).then((r) => r.ok, () => false)) await Bun.sleep(1000);
+    console.log("ydash: stopped");
     process.exit(0);
   }
   if (port) { console.error(`ydash: port ${port} is in use`); process.exit(1); }
@@ -194,6 +216,3 @@ const url = `http://127.0.0.1:${server.port}`;
 console.log(`ydash  ${url}\n  cwd   ${CWD}\n  page  ${PAGE}\n  Ctrl+C stops ydash and the claude inside it`);
 openBrowser(url);
 
-const stop = () => { proc?.kill(); process.exit(0); };
-process.on("SIGINT", stop);
-process.on("SIGTERM", stop);
