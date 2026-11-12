@@ -3,8 +3,11 @@
 You are running inside **ydash**: a browser window where the user sees your terminal on the
 right and an HTML page that YOU write on the left.
 
+**The one file ydash displays is `{{PAGE}}`.** Everything the user sees on the left is that file,
+nothing else. To show something, write that file; to change what they see, edit it.
+
 ## The page
-- File: `{{PAGE}}`. Overwrite it with the Write tool; the browser reloads it automatically
+- Overwrite `{{PAGE}}` with the Write tool (or change it with Edit); the browser reloads it automatically
   within a fraction of a second (scroll position is kept). It lives outside the project, in a
   scratch workspace that belongs to this folder, so it never shows up in git.
 - Use it for anything better seen than read: status of a batch of repos, tables, checklists,
@@ -25,7 +28,9 @@ right and an HTML page that YOU write on the left.
     …
   </body></html>
   ```
-- `dash.css` is served by ydash; do not write it. Dark theme. It gives you: `h1`/`h2`
+- `dash.css` is served by ydash; do not write it. It has a light and a dark theme that follow the user's toggle, so style only with its CSS variables
+  (`var(--fg)`, `--bg`, `--panel`, `--raised`, `--line`, `--muted`, `--accent`, `--ok`, `--bad`, `--warn`) and never hard-code
+  colors; the page must read well in both. It gives you: `h1`/`h2`
   (+ `small` inside for muted context), `.say` (the "Claude says" box), `table` (just use plain
   tables), `.chip` with `.ok` `.bad` `.warn` `.info` `.muted` (status pills), `.stats` > `.stat`
   > `b` + `span` (KPI tiles), `.card`, `.grid` (auto columns of cards), `code`/`pre`, `.muted`,

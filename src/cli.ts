@@ -93,11 +93,13 @@ function cleanEnv() {
   return env;
 }
 
+const isClaude = () => basename(CMD[0]!) === "claude";
+const instructions = () => instructionsMd.replaceAll("{{PAGE}}", PAGE).replaceAll("{{DIR}}", DIR);
+
 function command() {
-  if (basename(CMD[0]!) !== "claude") return [...CMD, ...claudeArgs];
-  const instructions = instructionsMd.replaceAll("{{PAGE}}", PAGE).replaceAll("{{DIR}}", DIR);
+  if (!isClaude()) return [...CMD, ...claudeArgs];
   // --add-dir lets claude write the page without a permission prompt.
-  return [...CMD, "--add-dir", DIR, "--append-system-prompt", instructions, ...claudeArgs];
+  return [...CMD, "--add-dir", DIR, "--append-system-prompt", instructions(), ...claudeArgs];
 }
 
 function ensureProc() {
@@ -131,6 +133,14 @@ process.on("SIGTERM", stop);
 // ---------- server ----------
 const html = (body: string) => new Response(body, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 
+// Stamp the browser's theme onto Claude's page before first paint, so a reload never flashes.
+function themed(page: string, theme: string | null) {
+  const t = theme === "light" || theme === "dark" ? theme : "";
+  const tag = t ? `<script>document.documentElement.dataset.theme="${t}"</script>` : "";
+  const out = /<head[^>]*>/i.test(page) ? page.replace(/<head[^>]*>/i, (m) => m + tag) : tag + page;
+  return html(out);
+}
+
 function serve(p: number) {
   return Bun.serve({
     hostname: "127.0.0.1",
@@ -141,6 +151,11 @@ function serve(p: number) {
       switch (url.pathname) {
         case "/": return html(shellHtml);
         case "/dash.css": return new Response(dashCss, { headers: { "Content-Type": "text/css; charset=utf-8" } });
+        case "/_prompt": {
+          // For the "system prompt" popup: the argv claude was started with, prompt text elided.
+          const shown = command().map((a) => (a === instructions() ? "<system prompt>" : /[\s"'$]/.test(a) ? JSON.stringify(a) : a));
+          return Response.json({ command: shown.join(" "), prompt: isClaude() ? instructions() : "" });
+        }
         case "/_ydash": return Response.json({ key, cwd: CWD, page: PAGE });
         case "/_stop": {
           // Same-origin POST only: a random website must not be able to kill the session.
@@ -158,6 +173,8 @@ function serve(p: number) {
           return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-store" } });
         }
       }
+      if (url.pathname === "/dash.html" && existsSync(PAGE)) return themed(await Bun.file(PAGE).text(), url.searchParams.get("theme"));
+
       // Anything else comes from the workspace dir (dash.html and its assets).
       const path = normalize(join(DIR, decodeURIComponent(url.pathname)));
       if (!path.startsWith(DIR + "/")) return new Response("forbidden", { status: 403 });
